@@ -325,18 +325,19 @@ func TestGithubRunPoliciesDataSource_ReadEmptyLabelsSurfaceAsEmptySet(t *testing
 }
 
 type githubRunPolicyDataSourceEntryModel struct {
-	Owner         types.String `tfsdk:"owner"`
-	Customer      types.String `tfsdk:"customer"`
-	PolicyID      types.String `tfsdk:"policy_id"`
-	Name          types.String `tfsdk:"name"`
-	CreatedBy     types.String `tfsdk:"created_by"`
-	CreatedAt     types.String `tfsdk:"created_at"`
-	LastUpdatedBy types.String `tfsdk:"last_updated_by"`
-	LastUpdatedAt types.String `tfsdk:"last_updated_at"`
-	AllRepos      types.Bool   `tfsdk:"all_repos"`
-	AllOrgs       types.Bool   `tfsdk:"all_orgs"`
-	Repositories  types.List   `tfsdk:"repositories"`
-	PolicyConfig  types.Object `tfsdk:"policy_config"`
+	Owner               types.String `tfsdk:"owner"`
+	Customer            types.String `tfsdk:"customer"`
+	PolicyID            types.String `tfsdk:"policy_id"`
+	Name                types.String `tfsdk:"name"`
+	CreatedBy           types.String `tfsdk:"created_by"`
+	CreatedAt           types.String `tfsdk:"created_at"`
+	LastUpdatedBy       types.String `tfsdk:"last_updated_by"`
+	LastUpdatedAt       types.String `tfsdk:"last_updated_at"`
+	AllRepos            types.Bool   `tfsdk:"all_repos"`
+	AllOrgs             types.Bool   `tfsdk:"all_orgs"`
+	Repositories        types.List   `tfsdk:"repositories"`
+	RepoPropertyFilters types.List   `tfsdk:"repo_property_filters"`
+	PolicyConfig        types.Object `tfsdk:"policy_config"`
 }
 
 type githubRunPolicyDataSourcePolicyConfigModel struct {
@@ -396,17 +397,18 @@ func testGithubRunPoliciesDataSourceConfigValue(t *testing.T, model githubRunPol
 
 func testRunPolicyDataSourceAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
-		"owner":           types.StringType,
-		"customer":        types.StringType,
-		"policy_id":       types.StringType,
-		"name":            types.StringType,
-		"created_by":      types.StringType,
-		"created_at":      types.StringType,
-		"last_updated_by": types.StringType,
-		"last_updated_at": types.StringType,
-		"all_repos":       types.BoolType,
-		"all_orgs":        types.BoolType,
-		"repositories":    types.ListType{ElemType: types.StringType},
+		"owner":                 types.StringType,
+		"customer":              types.StringType,
+		"policy_id":             types.StringType,
+		"name":                  types.StringType,
+		"created_by":            types.StringType,
+		"created_at":            types.StringType,
+		"last_updated_by":       types.StringType,
+		"last_updated_at":       types.StringType,
+		"all_repos":             types.BoolType,
+		"all_orgs":              types.BoolType,
+		"repositories":          types.ListType{ElemType: types.StringType},
+		"repo_property_filters": types.ListType{ElemType: repoPropertyFilterObjectType},
 		"policy_config": types.ObjectType{AttrTypes: map[string]attr.Type{
 			"owner":                             types.StringType,
 			"name":                              types.StringType,
