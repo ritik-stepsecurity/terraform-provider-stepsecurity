@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	stepsecurityapi "github.com/step-security/terraform-provider-stepsecurity/internal/stepsecurity-api"
 )
@@ -107,13 +108,19 @@ func validateRepoPropertyFiltersConfig(ctx context.Context, cfg githubRunPolicyR
 			"repo_property_filters cannot be combined with all_repos, repositories or all_orgs.")
 	}
 
-	var rows []repoPropertyFilterModel
-	diags.Append(cfg.RepoPropertyFilters.ElementsAs(ctx, &rows, false)...)
-	if diags.HasError() {
-		return
-	}
 	seen := map[string]bool{}
-	for i, row := range rows {
+	// Elements may be unknown at validate time (built from other resources);
+	// skip those rather than failing the conversion.
+	for i, elem := range cfg.RepoPropertyFilters.Elements() {
+		obj, ok := elem.(types.Object)
+		if !ok || obj.IsNull() || obj.IsUnknown() {
+			continue
+		}
+		var row repoPropertyFilterModel
+		if d := obj.As(ctx, &row, basetypes.ObjectAsOptions{}); d.HasError() {
+			diags.Append(d...)
+			return
+		}
 		if i == 0 && !row.Join.IsNull() && !row.Join.IsUnknown() {
 			diags.AddAttributeError(attrPath.AtListIndex(0).AtName("join"), "Invalid join on the first row",
 				"join says how a row combines with the previous row, so it must be omitted on the first row.")

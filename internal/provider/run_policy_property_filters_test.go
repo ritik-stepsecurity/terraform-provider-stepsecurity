@@ -269,3 +269,17 @@ func TestGithubRunPoliciesDataSource_ReadMapsPropertyFilters(t *testing.T) {
 	assert.Equal(t, "or", rows[1].Join.ValueString())
 	assert.True(t, entries[1].RepoPropertyFilters.IsNull(), "policy without a rule reads back as null")
 }
+
+// A rule element built from another resource is unknown at validate time and
+// must not fail validation.
+func TestGithubRunPolicyResource_ValidateConfigUnknownRow(t *testing.T) {
+	t.Parallel()
+
+	m := testPropertyScopedPlan(types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
+		types.ObjectUnknown(repoPropertyFilterObjectType.AttrTypes),
+	}))
+	r := &githubRunPolicyResource{}
+	resp := &fwresource.ValidateConfigResponse{}
+	r.ValidateConfig(context.Background(), fwresource.ValidateConfigRequest{Config: testGithubRunPolicyConfig(t, m)}, resp)
+	assert.False(t, resp.Diagnostics.HasError(), "diagnostics: %v", resp.Diagnostics)
+}
