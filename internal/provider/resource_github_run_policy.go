@@ -29,9 +29,10 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource                = &githubRunPolicyResource{}
-	_ resource.ResourceWithConfigure   = &githubRunPolicyResource{}
-	_ resource.ResourceWithImportState = &githubRunPolicyResource{}
+	_ resource.Resource                   = &githubRunPolicyResource{}
+	_ resource.ResourceWithConfigure      = &githubRunPolicyResource{}
+	_ resource.ResourceWithImportState    = &githubRunPolicyResource{}
+	_ resource.ResourceWithValidateConfig = &githubRunPolicyResource{}
 )
 
 // NewGithubRunPolicyResource is a helper function to simplify the provider implementation.
@@ -46,17 +47,18 @@ type githubRunPolicyResource struct {
 
 // githubRunPolicyResourceModel maps the resource schema data.
 type githubRunPolicyResourceModel struct {
-	Owner         types.String `tfsdk:"owner"`
-	Name          types.String `tfsdk:"name"`
-	PolicyID      types.String `tfsdk:"policy_id"`
-	AllRepos      types.Bool   `tfsdk:"all_repos"`
-	AllOrgs       types.Bool   `tfsdk:"all_orgs"`
-	Repositories  types.List   `tfsdk:"repositories"`
-	PolicyConfig  types.Object `tfsdk:"policy_config"`
-	CreatedBy     types.String `tfsdk:"created_by"`
-	CreatedAt     types.String `tfsdk:"created_at"`
-	LastUpdatedBy types.String `tfsdk:"last_updated_by"`
-	LastUpdatedAt types.String `tfsdk:"last_updated_at"`
+	Owner               types.String `tfsdk:"owner"`
+	Name                types.String `tfsdk:"name"`
+	PolicyID            types.String `tfsdk:"policy_id"`
+	AllRepos            types.Bool   `tfsdk:"all_repos"`
+	AllOrgs             types.Bool   `tfsdk:"all_orgs"`
+	Repositories        types.List   `tfsdk:"repositories"`
+	RepoPropertyFilters types.List   `tfsdk:"repo_property_filters"`
+	PolicyConfig        types.Object `tfsdk:"policy_config"`
+	CreatedBy           types.String `tfsdk:"created_by"`
+	CreatedAt           types.String `tfsdk:"created_at"`
+	LastUpdatedBy       types.String `tfsdk:"last_updated_by"`
+	LastUpdatedAt       types.String `tfsdk:"last_updated_at"`
 }
 
 // policyConfigModel maps the policy configuration data.
@@ -266,6 +268,7 @@ func (r *githubRunPolicyResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:            true,
 				MarkdownDescription: "List of specific repositories this policy applies to.",
 			},
+			"repo_property_filters": repoPropertyFiltersSchemaAttribute(),
 			"policy_config": schema.SingleNestedAttribute{
 				Required:            true,
 				MarkdownDescription: "The configuration for this run policy.",
@@ -576,6 +579,12 @@ func (r *githubRunPolicyResource) Create(ctx context.Context, req resource.Creat
 		}
 		createRequest.Repositories = repos
 	}
+	if !plan.RepoPropertyFilters.IsNull() {
+		createRequest.RepoPropertyFilters = expandRepoPropertyFilters(ctx, plan.RepoPropertyFilters, &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
 
 	// Handle allowed actions map
 	if !policyConfig.AllowedActions.IsNull() {
@@ -847,6 +856,10 @@ func (r *githubRunPolicyResource) Update(ctx context.Context, req resource.Updat
 		}
 		updateRequest.Repositories = repos
 	}
+	updateRequest.RepoPropertyFilters = expandRepoPropertyFilters(ctx, plan.RepoPropertyFilters, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	// Handle allowed actions map
 	if !policyConfig.AllowedActions.IsNull() {
@@ -1101,6 +1114,7 @@ func (r *githubRunPolicyResource) updateModelFromAPI(ctx context.Context, model 
 	} else {
 		model.Repositories = types.ListNull(types.StringType)
 	}
+	model.RepoPropertyFilters = flattenRepoPropertyFilters(policy.RepoPropertyFilters, diags)
 
 	// Handle policy configuration
 	policyConfigAttrs := map[string]attr.Value{

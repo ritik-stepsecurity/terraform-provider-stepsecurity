@@ -192,6 +192,7 @@ Read-Only:
 - `owner` (String) The owner of the policy.
 - `policy_config` (Attributes) The configuration for this run policy. (see [below for nested schema](#nestedatt--run_policies--policy_config))
 - `policy_id` (String) The unique identifier for this policy.
+- `repo_property_filters` (Attributes List) Custom property rule this policy applies to, if any. Rows after the first join the previous row with `and` or `or`; `and` binds first. (see [below for nested schema](#nestedatt--run_policies--repo_property_filters))
 - `repositories` (List of String) List of specific repositories this policy applies to.
 
 <a id="nestedatt--run_policies--policy_config"></a>
@@ -236,3 +237,15 @@ Read-Only:
 - `forbid_labels` (Set of String) Labels that must not be present on a matching job.
 - `if_label_matches` (String) Anchored glob tested against each of the job's runner labels; `*` matches any text.
 - `require_labels` (Set of String) Labels that must all be present on a matching job.
+
+
+
+<a id="nestedatt--run_policies--repo_property_filters"></a>
+### Nested Schema for `run_policies.repo_property_filters`
+
+Read-Only:
+
+- `join` (String) `and` or `or` with the previous row; null on the first row.
+- `match` (String) `any` or `all` of `values`.
+- `name` (String) The custom property name.
+- `values` (Set of String) Values matched exactly.

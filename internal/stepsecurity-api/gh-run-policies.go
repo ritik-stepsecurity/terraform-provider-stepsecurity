@@ -20,6 +20,20 @@ type RunPolicy struct {
 	AllRepos      bool            `json:"all_repos,omitempty"`
 	AllOrgs       bool            `json:"all_orgs,omitempty"`
 	Repositories  []string        `json:"repositories,omitempty"`
+	// RepoPropertyFilters scopes the policy to repositories by GitHub custom
+	// property. Rows split into groups at each row whose Join is "or"; every row
+	// of one group must match (AND before OR).
+	RepoPropertyFilters []RepoPropertyFilter `json:"repo_property_filters,omitempty"`
+}
+
+// RepoPropertyFilter is one row of a property rule. Match is "any" (default) or
+// "all" of Values; Join is how the row combines with the previous one, "and"
+// (default) or "or", and is empty on the first row.
+type RepoPropertyFilter struct {
+	Name   string   `json:"name"`
+	Values []string `json:"values"`
+	Match  string   `json:"match,omitempty"`
+	Join   string   `json:"join,omitempty"`
 }
 
 type RunPolicyConfig struct {
@@ -70,6 +84,8 @@ type CreateRunPolicyRequest struct {
 	AllRepos     bool            `json:"all_repos"`
 	AllOrgs      bool            `json:"all_orgs"`
 	Repositories []string        `json:"repositories"`
+	// Omitted when nil: older backends ignore it either way.
+	RepoPropertyFilters []RepoPropertyFilter `json:"repo_property_filters,omitempty"`
 }
 
 type UpdateRunPolicyRequest struct {
@@ -78,6 +94,9 @@ type UpdateRunPolicyRequest struct {
 	AllRepos     bool            `json:"all_repos"`
 	AllOrgs      bool            `json:"all_orgs"`
 	Repositories []string        `json:"repositories"`
+	// Never omitted: the backend keeps the stored rule when the field is
+	// absent, so an empty slice is how Terraform clears it.
+	RepoPropertyFilters []RepoPropertyFilter `json:"repo_property_filters"`
 }
 
 // ListRunPolicies retrieves all run policies for a given owner

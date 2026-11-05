@@ -725,6 +725,7 @@ func testGithubRunPolicyResourceSchema(t *testing.T) resourceschema.Schema {
 
 func testGithubRunPolicyPlan(t *testing.T, model githubRunPolicyResourceModel) tfsdk.Plan {
 	t.Helper()
+	model = withRepoPropertyFiltersDefault(model)
 
 	plan := tfsdk.Plan{Schema: testGithubRunPolicyResourceSchema(t)}
 	diags := plan.Set(context.Background(), model)
@@ -735,6 +736,7 @@ func testGithubRunPolicyPlan(t *testing.T, model githubRunPolicyResourceModel) t
 
 func testGithubRunPolicyState(t *testing.T, model githubRunPolicyResourceModel) tfsdk.State {
 	t.Helper()
+	model = withRepoPropertyFiltersDefault(model)
 
 	state := tfsdk.State{Schema: testGithubRunPolicyResourceSchema(t)}
 	diags := state.Set(context.Background(), model)
@@ -932,4 +934,13 @@ resource "stepsecurity_github_run_policy" "test" {
   }
 }
 `, owner, name)
+}
+
+// withRepoPropertyFiltersDefault types a zero-value repo_property_filters as a
+// null list, so fixtures written before the attribute existed still convert.
+func withRepoPropertyFiltersDefault(model githubRunPolicyResourceModel) githubRunPolicyResourceModel {
+	if model.RepoPropertyFilters.ElementType(context.Background()) == nil {
+		model.RepoPropertyFilters = types.ListNull(repoPropertyFilterObjectType)
+	}
+	return model
 }
