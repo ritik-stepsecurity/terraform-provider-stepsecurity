@@ -10,6 +10,7 @@ import (
 	fwdatasource "github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
@@ -282,4 +283,51 @@ func TestGithubRunPolicyResource_ValidateConfigUnknownRow(t *testing.T) {
 	resp := &fwresource.ValidateConfigResponse{}
 	r.ValidateConfig(context.Background(), fwresource.ValidateConfigRequest{Config: testGithubRunPolicyConfig(t, m)}, resp)
 	assert.False(t, resp.Diagnostics.HasError(), "diagnostics: %v", resp.Diagnostics)
+}
+
+// Removing join = "or" from a later row must plan "and" (the API default), not
+// keep the prior "or" with an empty plan.
+func TestGithubRunPolicyResource_ModifyPlanResolvesOmittedJoin(t *testing.T) {
+	t.Parallel()
+
+	cfgRule := types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
+		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, "any", types.StringNull()),
+		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, "all", types.StringNull()),
+	})
+	priorRule := testTwoRowRule() // second row joins with "or"
+
+	r := &githubRunPolicyResource{}
+	cfg := testGithubRunPolicyConfig(t, testPropertyScopedPlan(cfgRule))
+	plan := testGithubRunPolicyPlan(t, testPropertyScopedPlan(priorRule))
+	resp := &fwresource.ModifyPlanResponse{Plan: plan}
+	r.ModifyPlan(context.Background(), fwresource.ModifyPlanRequest{Config: cfg, Plan: plan}, resp)
+	require.False(t, resp.Diagnostics.HasError(), "diagnostics: %v", resp.Diagnostics)
+
+	var model githubRunPolicyResourceModel
+	require.False(t, resp.Plan.Get(context.Background(), &model).HasError())
+	var rows []repoPropertyFilterModel
+	require.False(t, model.RepoPropertyFilters.ElementsAs(context.Background(), &rows, false).HasError())
+	require.Len(t, rows, 2)
+	assert.True(t, rows[0].Join.IsNull(), "first row has no join")
+	assert.Equal(t, "and", rows[1].Join.ValueString(), "omitted join plans the API default")
+	assert.True(t, model.LastUpdatedAt.IsUnknown(), "update stamps change on apply")
+	assert.True(t, model.LastUpdatedBy.IsUnknown())
+}
+
+func TestTrimmedTokenRejectsUnicodeWhitespace(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		value string
+		ok    bool
+	}{
+		{"Tier 1", true},
+		{"\u00a0Tier 1", false}, // non-breaking space
+		{"Tier 1\u2003", false}, // em space
+		{" Tier 1", false},
+	} {
+		resp := &validator.StringResponse{}
+		trimmedToken{}.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue(tc.value)}, resp)
+		assert.Equal(t, !tc.ok, resp.Diagnostics.HasError(), "value %q", tc.value)
+	}
 }

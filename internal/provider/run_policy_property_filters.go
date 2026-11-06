@@ -50,6 +50,7 @@ func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
 	token := []validator.String{
 		stringvalidator.LengthBetween(1, maxRepoPropertyTokenLength),
 		noSurroundingWhitespace,
+		trimmedToken{},
 	}
 	return schema.ListNestedAttribute{
 		Optional: true,
@@ -196,4 +197,86 @@ func (r *githubRunPolicyResource) ValidateConfig(ctx context.Context, req resour
 		return
 	}
 	validateRepoPropertyFiltersConfig(ctx, cfg, &resp.Diagnostics)
+}
+
+// trimmedToken rejects names and values the API would trim. strings.TrimSpace
+// is Unicode-aware, so it also catches non-breaking and em spaces that the
+// shared \S-based validator lets through.
+type trimmedToken struct{}
+
+func (trimmedToken) Description(context.Context) string {
+	return "must not have leading or trailing whitespace"
+}
+
+func (v trimmedToken) MarkdownDescription(ctx context.Context) string { return v.Description(ctx) }
+
+func (v trimmedToken) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if s := req.ConfigValue.ValueString(); s != strings.TrimSpace(s) {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid value", v.Description(ctx))
+	}
+}
+
+var _ resource.ResourceWithModifyPlan = &githubRunPolicyResource{}
+
+// ModifyPlan resolves an omitted join to what the API stores: null on the
+// first row and "and" on later rows. join is Optional+Computed, so without
+// this a removed join keeps its prior value and the plan shows no change.
+func (r *githubRunPolicyResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	attrPath := path.Root("repo_property_filters")
+	var cfg, planned types.List
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, attrPath, &cfg)...)
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, attrPath, &planned)...)
+	if resp.Diagnostics.HasError() || cfg.IsNull() || cfg.IsUnknown() || planned.IsNull() || planned.IsUnknown() {
+		return
+	}
+	cfgRows, planRows := cfg.Elements(), planned.Elements()
+	if len(cfgRows) != len(planRows) {
+		return
+	}
+	rows := make([]attr.Value, len(planRows))
+	changed := false
+	for i, el := range planRows {
+		rows[i] = el
+		row, ok := el.(types.Object)
+		cfgRow, cfgOK := cfgRows[i].(types.Object)
+		if !ok || !cfgOK || row.IsNull() || row.IsUnknown() || cfgRow.IsNull() || cfgRow.IsUnknown() {
+			continue
+		}
+		if j, ok := cfgRow.Attributes()["join"]; !ok || !j.IsNull() {
+			continue
+		}
+		want := types.StringValue("and")
+		if i == 0 {
+			want = types.StringNull()
+		}
+		attrs := make(map[string]attr.Value, len(row.Attributes()))
+		for k, v := range row.Attributes() {
+			attrs[k] = v
+		}
+		if attrs["join"].Equal(want) {
+			continue
+		}
+		attrs["join"] = want
+		obj, d := types.ObjectValue(repoPropertyFilterObjectType.AttrTypes, attrs)
+		resp.Diagnostics.Append(d...)
+		rows[i] = obj
+		changed = true
+	}
+	if !changed || resp.Diagnostics.HasError() {
+		return
+	}
+	list, d := types.ListValue(repoPropertyFilterObjectType, rows)
+	resp.Diagnostics.Append(d...)
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, attrPath, list)...)
+	// The framework only marks computed fields unknown when the plan already
+	// differed from state; this change can be the only one, so the update
+	// stamps must be marked here or apply reports an inconsistent result.
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("last_updated_at"), types.StringUnknown())...)
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("last_updated_by"), types.StringUnknown())...)
 }
