@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	fwdatasource "github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -329,5 +331,29 @@ func TestTrimmedTokenRejectsUnicodeWhitespace(t *testing.T) {
 		resp := &validator.StringResponse{}
 		trimmedToken{}.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue(tc.value)}, resp)
 		assert.Equal(t, !tc.ok, resp.Diagnostics.HasError(), "value %q", tc.value)
+	}
+}
+
+func TestRepoPropertyTokenLengthCountsCharacters(t *testing.T) {
+	t.Parallel()
+
+	attrs := repoPropertyFiltersSchemaAttribute().NestedObject.Attributes
+	validators := attrs["name"].(schema.StringAttribute).Validators
+	for _, tc := range []struct {
+		label string
+		value string
+		ok    bool
+	}{
+		{"75 ASCII characters", strings.Repeat("a", 75), true},
+		{"76 ASCII characters", strings.Repeat("a", 76), false},
+		{"30 CJK characters (90 bytes)", strings.Repeat("層", 30), true},
+		{"75 accented characters (150 bytes)", strings.Repeat("é", 75), true},
+		{"76 accented characters", strings.Repeat("é", 76), false},
+	} {
+		resp := &validator.StringResponse{}
+		for _, v := range validators {
+			v.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue(tc.value)}, resp)
+		}
+		assert.Equal(t, !tc.ok, resp.Diagnostics.HasError(), tc.label)
 	}
 }

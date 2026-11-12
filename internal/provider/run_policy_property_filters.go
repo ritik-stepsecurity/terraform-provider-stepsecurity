@@ -48,7 +48,9 @@ type repoPropertyFilterModel struct {
 
 func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
 	token := []validator.String{
-		stringvalidator.LengthBetween(1, maxRepoPropertyTokenLength),
+		// Characters, not bytes: GitHub and the backend cap names and values
+		// at 75 characters, so a non-ASCII value must not count per byte.
+		stringvalidator.UTF8LengthBetween(1, maxRepoPropertyTokenLength),
 		noSurroundingWhitespace,
 		trimmedToken{},
 	}
