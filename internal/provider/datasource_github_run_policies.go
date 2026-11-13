@@ -112,7 +112,6 @@ func (d *githubRunPoliciesDataSource) Schema(_ context.Context, _ datasource.Sch
 								Attributes: map[string]schema.Attribute{
 									"property": schema.StringAttribute{Computed: true, MarkdownDescription: "The custom property name."},
 									"values":   schema.SetAttribute{ElementType: types.StringType, Computed: true, MarkdownDescription: "Values matched exactly."},
-									"match":    schema.StringAttribute{Computed: true, MarkdownDescription: "`any` or `all` of `values`."},
 									"combine":  schema.StringAttribute{Computed: true, MarkdownDescription: "`and` or `or` with the row above; null on the first row."},
 								},
 							},

@@ -1361,7 +1361,6 @@ const (
 var repoPropertyFilterObjectType = types.ObjectType{AttrTypes: map[string]attr.Type{
 	"property": types.StringType,
 	"values":   types.SetType{ElemType: types.StringType},
-	"match":    types.StringType,
 	"combine":  types.StringType,
 }}
 
@@ -1369,7 +1368,6 @@ var repoPropertyFilterObjectType = types.ObjectType{AttrTypes: map[string]attr.T
 type repoPropertyFilterModel struct {
 	Property types.String `tfsdk:"property"`
 	Values   types.Set    `tfsdk:"values"`
-	Match    types.String `tfsdk:"match"`
 	Combine  types.String `tfsdk:"combine"`
 }
 
@@ -1401,18 +1399,11 @@ func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
 				"values": schema.SetAttribute{
 					ElementType:         types.StringType,
 					Required:            true,
-					MarkdownDescription: "Values to match exactly (case-sensitive).",
+					MarkdownDescription: "Values to match exactly (case-sensitive). A repository matches the row when it has any of them.",
 					Validators: []validator.Set{
 						setvalidator.SizeBetween(1, maxRepoPropertyFilterValues),
 						setvalidator.ValueStringsAre(token...),
 					},
-				},
-				"match": schema.StringAttribute{
-					Optional:            true,
-					Computed:            true,
-					Default:             stringdefault.StaticString("any"),
-					MarkdownDescription: "`any` (default): the repository has at least one of `values`. `all`: it has every value (multi-select properties).",
-					Validators:          []validator.String{stringvalidator.OneOf("any", "all")},
 				},
 				"combine": schema.StringAttribute{
 					Optional:            true,
@@ -1482,7 +1473,6 @@ func expandRepoPropertyFilters(ctx context.Context, list types.List, diags *diag
 		out = append(out, stepsecurityapi.RepoPropertyFilter{
 			Name:   row.Property.ValueString(),
 			Values: values,
-			Match:  row.Match.ValueString(),
 			Join:   row.Combine.ValueString(),
 		})
 	}
@@ -1501,14 +1491,9 @@ func flattenRepoPropertyFilters(filters []stepsecurityapi.RepoPropertyFilter, di
 		if i > 0 {
 			combine = types.StringValue(f.Join)
 		}
-		match := f.Match
-		if match == "" {
-			match = "any"
-		}
 		row, d := types.ObjectValue(repoPropertyFilterObjectType.AttrTypes, map[string]attr.Value{
 			"property": types.StringValue(f.Name),
 			"values":   stringSetValueOrNull(f.Values, diags),
-			"match":    types.StringValue(match),
 			"combine":  combine,
 		})
 		diags.Append(d...)

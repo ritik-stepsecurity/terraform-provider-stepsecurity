@@ -22,7 +22,7 @@ import (
 	stepsecurityapi "github.com/step-security/terraform-provider-stepsecurity/internal/stepsecurity-api"
 )
 
-func testPropertyFilterRow(name string, values []string, match string, combine types.String) attr.Value {
+func testPropertyFilterRow(name string, values []string, combine types.String) attr.Value {
 	vals := make([]attr.Value, len(values))
 	for i, v := range values {
 		vals[i] = types.StringValue(v)
@@ -30,7 +30,6 @@ func testPropertyFilterRow(name string, values []string, match string, combine t
 	return types.ObjectValueMust(repoPropertyFilterObjectType.AttrTypes, map[string]attr.Value{
 		"property": types.StringValue(name),
 		"values":   types.SetValueMust(types.StringType, vals),
-		"match":    types.StringValue(match),
 		"combine":  combine,
 	})
 }
@@ -68,15 +67,15 @@ func testPropertyScopedPlan(filters types.List) githubRunPolicyResourceModel {
 
 func testTwoRowRule() types.List {
 	return types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
-		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, "any", types.StringNull()),
-		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, "all", types.StringValue("or")),
+		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, types.StringNull()),
+		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, types.StringValue("or")),
 	})
 }
 
 func testStoredRule() []stepsecurityapi.RepoPropertyFilter {
 	return []stepsecurityapi.RepoPropertyFilter{
-		{Name: "sensitive_app_level", Values: []string{"Tier 1"}, Match: "any"},
-		{Name: "compliance_scope", Values: []string{"pci", "sox"}, Match: "all", Join: "or"},
+		{Name: "sensitive_app_level", Values: []string{"Tier 1"}},
+		{Name: "compliance_scope", Values: []string{"pci", "sox"}, Join: "or"},
 	}
 }
 
@@ -112,8 +111,8 @@ func TestGithubRunPolicyResource_CreateSendsAndStoresPropertyFilters(t *testing.
 		On("CreateRunPolicy", mock.Anything, "test-org", mock.MatchedBy(func(req stepsecurityapi.CreateRunPolicyRequest) bool {
 			f := req.RepoPropertyFilters
 			return !req.AllRepos && len(f) == 2 &&
-				f[0].Name == "sensitive_app_level" && f[0].Match == "any" && f[0].Join == "" &&
-				f[1].Name == "compliance_scope" && f[1].Match == "all" && f[1].Join == "or" &&
+				f[0].Name == "sensitive_app_level" && f[0].Join == "" &&
+				f[1].Name == "compliance_scope" && f[1].Join == "or" &&
 				assert.ElementsMatch(t, []string{"pci", "sox"}, f[1].Values)
 		})).
 		Return(testPolicyResponse(testStoredRule()), nil).
@@ -130,7 +129,6 @@ func TestGithubRunPolicyResource_CreateSendsAndStoresPropertyFilters(t *testing.
 	require.Len(t, rows, 2)
 	assert.True(t, rows[0].Combine.IsNull(), "first-row combine must stay null to match config")
 	assert.Equal(t, "or", rows[1].Combine.ValueString())
-	assert.Equal(t, "all", rows[1].Match.ValueString())
 	assert.Equal(t, []string{"Tier 1"}, setStrings(t, rows[0].Values))
 }
 
@@ -213,13 +211,13 @@ func TestGithubRunPolicyResource_ValidateConfigPropertyFilters(t *testing.T) {
 		{name: "with repositories", mutate: func(m *githubRunPolicyResourceModel) { m.Repositories = repos }, wantErr: "Conflicting repository scope"},
 		{name: "combine on first row", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
-				testPropertyFilterRow("team", []string{"payments"}, "any", types.StringValue("and")),
+				testPropertyFilterRow("team", []string{"payments"}, types.StringValue("and")),
 			})
 		}, wantErr: "Invalid combine on the first row"},
 		{name: "duplicate property ignoring case", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
-				testPropertyFilterRow("Team", []string{"payments"}, "any", types.StringNull()),
-				testPropertyFilterRow("team", []string{"billing"}, "any", types.StringValue("or")),
+				testPropertyFilterRow("Team", []string{"payments"}, types.StringNull()),
+				testPropertyFilterRow("team", []string{"billing"}, types.StringValue("or")),
 			})
 		}, wantErr: "Duplicate property"},
 	}
@@ -293,8 +291,8 @@ func TestGithubRunPolicyResource_ModifyPlanResolvesOmittedJoin(t *testing.T) {
 	t.Parallel()
 
 	cfgRule := types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
-		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, "any", types.StringNull()),
-		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, "all", types.StringNull()),
+		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, types.StringNull()),
+		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, types.StringNull()),
 	})
 	priorRule := testTwoRowRule() // second row combines with "or"
 
