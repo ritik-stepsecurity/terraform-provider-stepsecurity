@@ -336,7 +336,7 @@ type githubRunPolicyDataSourceEntryModel struct {
 	AllRepos            types.Bool   `tfsdk:"all_repos"`
 	AllOrgs             types.Bool   `tfsdk:"all_orgs"`
 	Repositories        types.List   `tfsdk:"repositories"`
-	RepoPropertyFilters types.List   `tfsdk:"repo_property_filters"`
+	RepoPropertyFilters types.List   `tfsdk:"custom_property_rule"`
 	PolicyConfig        types.Object `tfsdk:"policy_config"`
 }
 
@@ -397,18 +397,18 @@ func testGithubRunPoliciesDataSourceConfigValue(t *testing.T, model githubRunPol
 
 func testRunPolicyDataSourceAttrTypes() map[string]attr.Type {
 	return map[string]attr.Type{
-		"owner":                 types.StringType,
-		"customer":              types.StringType,
-		"policy_id":             types.StringType,
-		"name":                  types.StringType,
-		"created_by":            types.StringType,
-		"created_at":            types.StringType,
-		"last_updated_by":       types.StringType,
-		"last_updated_at":       types.StringType,
-		"all_repos":             types.BoolType,
-		"all_orgs":              types.BoolType,
-		"repositories":          types.ListType{ElemType: types.StringType},
-		"repo_property_filters": types.ListType{ElemType: repoPropertyFilterObjectType},
+		"owner":                types.StringType,
+		"customer":             types.StringType,
+		"policy_id":            types.StringType,
+		"name":                 types.StringType,
+		"created_by":           types.StringType,
+		"created_at":           types.StringType,
+		"last_updated_by":      types.StringType,
+		"last_updated_at":      types.StringType,
+		"all_repos":            types.BoolType,
+		"all_orgs":             types.BoolType,
+		"repositories":         types.ListType{ElemType: types.StringType},
+		"custom_property_rule": types.ListType{ElemType: repoPropertyFilterObjectType},
 		"policy_config": types.ObjectType{AttrTypes: map[string]attr.Type{
 			"owner":                             types.StringType,
 			"name":                              types.StringType,

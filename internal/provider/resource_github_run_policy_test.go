@@ -936,7 +936,7 @@ resource "stepsecurity_github_run_policy" "test" {
 `, owner, name)
 }
 
-// withRepoPropertyFiltersDefault types a zero-value repo_property_filters as a
+// withRepoPropertyFiltersDefault types a zero-value custom_property_rule as a
 // null list, so fixtures written before the attribute existed still convert.
 func withRepoPropertyFiltersDefault(model githubRunPolicyResourceModel) githubRunPolicyResourceModel {
 	if model.RepoPropertyFilters.ElementType(context.Background()) == nil {

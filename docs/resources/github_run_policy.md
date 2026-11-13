@@ -500,25 +500,26 @@ resource "stepsecurity_github_run_policy" "secrets_policy_default_branch" {
   }
 }
 
-# Custom Property Scope Example - Applies to repositories by GitHub custom
-# property, including repositories tagged later. Rows after the first join the
-# previous row with "and" (default) or "or"; "and" binds first. Property names
-# ignore case; values match exactly. This rule reads:
-# (sensitive_app_level is Tier 1) OR (compliance_scope has both pci AND sox).
+# Custom Property Rule Example - Applies to repositories by GitHub custom
+# property, including repositories tagged later (the console's "Repositories
+# with a custom property" scope). Rows after the first combine with the row
+# above using "and" (default) or "or"; "and" binds first. Property names ignore
+# case; values match exactly. This rule reads:
+# (sensitive_app_level is Tier 1) OR (compliance_scope is all of pci, sox).
 resource "stepsecurity_github_run_policy" "tier1_secrets_policy" {
   owner = "my-org"
   name  = "Secrets Policy - Tier 1 Repositories"
 
-  repo_property_filters = [
+  custom_property_rule = [
     {
-      name   = "sensitive_app_level"
-      values = ["Tier 1"]
+      property = "sensitive_app_level"
+      values   = ["Tier 1"]
     },
     {
-      join   = "or"
-      name   = "compliance_scope"
-      values = ["pci", "sox"]
-      match  = "all"
+      combine  = "or"
+      property = "compliance_scope"
+      values   = ["pci", "sox"]
+      match    = "all"
     },
   ]
 
@@ -551,7 +552,7 @@ import {
 
 - `all_orgs` (Boolean) Whether this policy applies to all organizations.
 - `all_repos` (Boolean) Whether this policy applies to all repositories in the organization.
-- `repo_property_filters` (Attributes List) Applies the policy to repositories whose GitHub custom properties match this rule, including repositories tagged later. Rows are combined in order: each row after the first says how it joins the previous one (`and` or `or`), and `and` binds before `or`. Property names ignore case; values match exactly. Cannot be combined with `all_repos`, `repositories` or `all_orgs`. When a run's repository properties cannot be resolved, the policy is not applied to that run. (see [below for nested schema](#nestedatt--repo_property_filters))
+- `custom_property_rule` (Attributes List) Applies the policy to repositories whose GitHub custom properties match this rule, including repositories tagged later. Rows are combined in order: each row after the first says how it combines with the row above through `combine` (`and` or `or`), and `and` binds before `or`. Property names ignore case; values match exactly. Cannot be combined with `all_repos`, `repositories` or `all_orgs`. When a run's repository properties cannot be resolved, the policy is not applied to that run. (see [below for nested schema](#nestedatt--custom_property_rule))
 - `repositories` (List of String) List of specific repositories this policy applies to.
 
 ### Read-Only
@@ -614,17 +615,17 @@ Optional:
 
 
 
-<a id="nestedatt--repo_property_filters"></a>
-### Nested Schema for `repo_property_filters`
+<a id="nestedatt--custom_property_rule"></a>
+### Nested Schema for `custom_property_rule`
 
 Required:
 
-- `name` (String) The custom property name (case-insensitive).
+- `property` (String) The custom property name (case-insensitive).
 - `values` (Set of String) Values to match exactly (case-sensitive).
 
 Optional:
 
-- `join` (String) How this row combines with the previous row: `and` (default) or `or`. Omit on the first row.
+- `combine` (String) How this row combines with the row above: `and` (default) or `or`. Omit on the first row.
 - `match` (String) `any` (default): the repository has at least one of `values`. `all`: it has every value (multi-select properties).
 
 ## Import

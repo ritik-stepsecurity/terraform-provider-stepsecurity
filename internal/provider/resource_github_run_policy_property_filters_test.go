@@ -22,16 +22,16 @@ import (
 	stepsecurityapi "github.com/step-security/terraform-provider-stepsecurity/internal/stepsecurity-api"
 )
 
-func testPropertyFilterRow(name string, values []string, match string, join types.String) attr.Value {
+func testPropertyFilterRow(name string, values []string, match string, combine types.String) attr.Value {
 	vals := make([]attr.Value, len(values))
 	for i, v := range values {
 		vals[i] = types.StringValue(v)
 	}
 	return types.ObjectValueMust(repoPropertyFilterObjectType.AttrTypes, map[string]attr.Value{
-		"name":   types.StringValue(name),
-		"values": types.SetValueMust(types.StringType, vals),
-		"match":  types.StringValue(match),
-		"join":   join,
+		"property": types.StringValue(name),
+		"values":   types.SetValueMust(types.StringType, vals),
+		"match":    types.StringValue(match),
+		"combine":  combine,
 	})
 }
 
@@ -128,8 +128,8 @@ func TestGithubRunPolicyResource_CreateSendsAndStoresPropertyFilters(t *testing.
 
 	rows := stateFilters(t, resp.State)
 	require.Len(t, rows, 2)
-	assert.True(t, rows[0].Join.IsNull(), "first-row join must stay null to match config")
-	assert.Equal(t, "or", rows[1].Join.ValueString())
+	assert.True(t, rows[0].Combine.IsNull(), "first-row combine must stay null to match config")
+	assert.Equal(t, "or", rows[1].Combine.ValueString())
 	assert.Equal(t, "all", rows[1].Match.ValueString())
 	assert.Equal(t, []string{"Tier 1"}, setStrings(t, rows[0].Values))
 }
@@ -186,8 +186,8 @@ func TestGithubRunPolicyResource_ImportStoredRule(t *testing.T) {
 	state := testGithubRunPolicyState(t, model)
 	rows := stateFilters(t, state)
 	require.Len(t, rows, 2)
-	assert.True(t, rows[0].Join.IsNull())
-	assert.Equal(t, "or", rows[1].Join.ValueString())
+	assert.True(t, rows[0].Combine.IsNull())
+	assert.Equal(t, "or", rows[1].Combine.ValueString())
 
 	r.updateModelFromAPI(context.Background(), &model, testPolicyResponse(nil), &diags)
 	require.False(t, diags.HasError())
@@ -211,11 +211,11 @@ func TestGithubRunPolicyResource_ValidateConfigPropertyFilters(t *testing.T) {
 		{name: "with all_repos", mutate: func(m *githubRunPolicyResourceModel) { m.AllRepos = types.BoolValue(true) }, wantErr: "Conflicting repository scope"},
 		{name: "with all_orgs", mutate: func(m *githubRunPolicyResourceModel) { m.AllOrgs = types.BoolValue(true) }, wantErr: "Conflicting repository scope"},
 		{name: "with repositories", mutate: func(m *githubRunPolicyResourceModel) { m.Repositories = repos }, wantErr: "Conflicting repository scope"},
-		{name: "join on first row", mutate: func(m *githubRunPolicyResourceModel) {
+		{name: "combine on first row", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
 				testPropertyFilterRow("team", []string{"payments"}, "any", types.StringValue("and")),
 			})
-		}, wantErr: "Invalid join on the first row"},
+		}, wantErr: "Invalid combine on the first row"},
 		{name: "duplicate property ignoring case", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
 				testPropertyFilterRow("Team", []string{"payments"}, "any", types.StringNull()),
@@ -268,8 +268,8 @@ func TestGithubRunPoliciesDataSource_ReadMapsPropertyFilters(t *testing.T) {
 	var rows []repoPropertyFilterModel
 	require.False(t, entries[0].RepoPropertyFilters.ElementsAs(context.Background(), &rows, false).HasError())
 	require.Len(t, rows, 2)
-	assert.Equal(t, "compliance_scope", rows[1].Name.ValueString())
-	assert.Equal(t, "or", rows[1].Join.ValueString())
+	assert.Equal(t, "compliance_scope", rows[1].Property.ValueString())
+	assert.Equal(t, "or", rows[1].Combine.ValueString())
 	assert.True(t, entries[1].RepoPropertyFilters.IsNull(), "policy without a rule reads back as null")
 }
 
@@ -287,7 +287,7 @@ func TestGithubRunPolicyResource_ValidateConfigUnknownRow(t *testing.T) {
 	assert.False(t, resp.Diagnostics.HasError(), "diagnostics: %v", resp.Diagnostics)
 }
 
-// Removing join = "or" from a later row must plan "and" (the API default), not
+// Removing combine = "or" from a later row must plan "and" (the API default), not
 // keep the prior "or" with an empty plan.
 func TestGithubRunPolicyResource_ModifyPlanResolvesOmittedJoin(t *testing.T) {
 	t.Parallel()
@@ -296,7 +296,7 @@ func TestGithubRunPolicyResource_ModifyPlanResolvesOmittedJoin(t *testing.T) {
 		testPropertyFilterRow("sensitive_app_level", []string{"Tier 1"}, "any", types.StringNull()),
 		testPropertyFilterRow("compliance_scope", []string{"pci", "sox"}, "all", types.StringNull()),
 	})
-	priorRule := testTwoRowRule() // second row joins with "or"
+	priorRule := testTwoRowRule() // second row combines with "or"
 
 	r := &githubRunPolicyResource{}
 	cfg := testGithubRunPolicyConfig(t, testPropertyScopedPlan(cfgRule))
@@ -310,8 +310,8 @@ func TestGithubRunPolicyResource_ModifyPlanResolvesOmittedJoin(t *testing.T) {
 	var rows []repoPropertyFilterModel
 	require.False(t, model.RepoPropertyFilters.ElementsAs(context.Background(), &rows, false).HasError())
 	require.Len(t, rows, 2)
-	assert.True(t, rows[0].Join.IsNull(), "first row has no join")
-	assert.Equal(t, "and", rows[1].Join.ValueString(), "omitted join plans the API default")
+	assert.True(t, rows[0].Combine.IsNull(), "first row has no combine")
+	assert.Equal(t, "and", rows[1].Combine.ValueString(), "omitted combine plans the API default")
 	assert.True(t, model.LastUpdatedAt.IsUnknown(), "update stamps change on apply")
 	assert.True(t, model.LastUpdatedBy.IsUnknown())
 }
@@ -338,7 +338,7 @@ func TestRepoPropertyTokenLengthCountsCharacters(t *testing.T) {
 	t.Parallel()
 
 	attrs := repoPropertyFiltersSchemaAttribute().NestedObject.Attributes
-	validators := attrs["name"].(schema.StringAttribute).Validators
+	validators := attrs["property"].(schema.StringAttribute).Validators
 	for _, tc := range []struct {
 		label string
 		value string

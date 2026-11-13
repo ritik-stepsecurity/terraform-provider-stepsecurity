@@ -54,7 +54,7 @@ type githubRunPolicyResourceModel struct {
 	AllRepos            types.Bool   `tfsdk:"all_repos"`
 	AllOrgs             types.Bool   `tfsdk:"all_orgs"`
 	Repositories        types.List   `tfsdk:"repositories"`
-	RepoPropertyFilters types.List   `tfsdk:"repo_property_filters"`
+	RepoPropertyFilters types.List   `tfsdk:"custom_property_rule"`
 	PolicyConfig        types.Object `tfsdk:"policy_config"`
 	CreatedBy           types.String `tfsdk:"created_by"`
 	CreatedAt           types.String `tfsdk:"created_at"`
@@ -269,7 +269,7 @@ func (r *githubRunPolicyResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:            true,
 				MarkdownDescription: "List of specific repositories this policy applies to.",
 			},
-			"repo_property_filters": repoPropertyFiltersSchemaAttribute(),
+			"custom_property_rule": repoPropertyFiltersSchemaAttribute(),
 			"policy_config": schema.SingleNestedAttribute{
 				Required:            true,
 				MarkdownDescription: "The configuration for this run policy.",
@@ -1348,7 +1348,7 @@ func (r *githubRunPolicyResource) updateModelFromAPI(ctx context.Context, model 
 	model.PolicyConfig = policyConfigObj
 }
 
-// Server-side limits for repo_property_filters (agent-api
+// Server-side limits for custom_property_rule (agent-api
 // validateAndNormalizeRunPolicyScope); checking them here fails at plan time
 // instead of as a 400 on apply.
 const (
@@ -1357,20 +1357,20 @@ const (
 	maxRepoPropertyTokenLength  = 75
 )
 
-// repoPropertyFilterObjectType is the element type of repo_property_filters.
+// repoPropertyFilterObjectType is the element type of custom_property_rule.
 var repoPropertyFilterObjectType = types.ObjectType{AttrTypes: map[string]attr.Type{
-	"name":   types.StringType,
-	"values": types.SetType{ElemType: types.StringType},
-	"match":  types.StringType,
-	"join":   types.StringType,
+	"property": types.StringType,
+	"values":   types.SetType{ElemType: types.StringType},
+	"match":    types.StringType,
+	"combine":  types.StringType,
 }}
 
-// repoPropertyFilterModel mirrors one repo_property_filters element.
+// repoPropertyFilterModel mirrors one custom_property_rule element.
 type repoPropertyFilterModel struct {
-	Name   types.String `tfsdk:"name"`
-	Values types.Set    `tfsdk:"values"`
-	Match  types.String `tfsdk:"match"`
-	Join   types.String `tfsdk:"join"`
+	Property types.String `tfsdk:"property"`
+	Values   types.Set    `tfsdk:"values"`
+	Match    types.String `tfsdk:"match"`
+	Combine  types.String `tfsdk:"combine"`
 }
 
 func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
@@ -1385,15 +1385,15 @@ func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
 		Optional: true,
 		MarkdownDescription: "Applies the policy to repositories whose GitHub custom properties match this rule, " +
 			"including repositories tagged later. Rows are combined in order: each row after the first says how it " +
-			"joins the previous one (`and` or `or`), and `and` binds before `or`. Property names ignore case; values " +
-			"match exactly. Cannot be combined with `all_repos`, `repositories` or `all_orgs`. When a run's " +
+			"combines with the row above through `combine` (`and` or `or`), and `and` binds before `or`. Property names " +
+			"ignore case; values match exactly. Cannot be combined with `all_repos`, `repositories` or `all_orgs`. When a run's " +
 			"repository properties cannot be resolved, the policy is not applied to that run.",
 		Validators: []validator.List{
 			listvalidator.SizeBetween(1, maxRepoPropertyFilters),
 		},
 		NestedObject: schema.NestedAttributeObject{
 			Attributes: map[string]schema.Attribute{
-				"name": schema.StringAttribute{
+				"property": schema.StringAttribute{
 					Required:            true,
 					MarkdownDescription: "The custom property name (case-insensitive).",
 					Validators:          token,
@@ -1414,10 +1414,10 @@ func repoPropertyFiltersSchemaAttribute() schema.ListNestedAttribute {
 					MarkdownDescription: "`any` (default): the repository has at least one of `values`. `all`: it has every value (multi-select properties).",
 					Validators:          []validator.String{stringvalidator.OneOf("any", "all")},
 				},
-				"join": schema.StringAttribute{
+				"combine": schema.StringAttribute{
 					Optional:            true,
 					Computed:            true,
-					MarkdownDescription: "How this row combines with the previous row: `and` (default) or `or`. Omit on the first row.",
+					MarkdownDescription: "How this row combines with the row above: `and` (default) or `or`. Omit on the first row.",
 					Validators:          []validator.String{stringvalidator.OneOf("and", "or")},
 				},
 			},
@@ -1431,11 +1431,11 @@ func validateRepoPropertyFiltersConfig(ctx context.Context, cfg githubRunPolicyR
 	if cfg.RepoPropertyFilters.IsNull() || cfg.RepoPropertyFilters.IsUnknown() {
 		return
 	}
-	attrPath := path.Root("repo_property_filters")
+	attrPath := path.Root("custom_property_rule")
 	if cfg.AllRepos.ValueBool() || cfg.AllOrgs.ValueBool() ||
 		(!cfg.Repositories.IsNull() && !cfg.Repositories.IsUnknown() && len(cfg.Repositories.Elements()) > 0) {
 		diags.AddAttributeError(attrPath, "Conflicting repository scope",
-			"repo_property_filters cannot be combined with all_repos, repositories or all_orgs.")
+			"custom_property_rule cannot be combined with all_repos, repositories or all_orgs.")
 	}
 
 	seen := map[string]bool{}
@@ -1451,17 +1451,17 @@ func validateRepoPropertyFiltersConfig(ctx context.Context, cfg githubRunPolicyR
 			diags.Append(d...)
 			return
 		}
-		if i == 0 && !row.Join.IsNull() && !row.Join.IsUnknown() {
-			diags.AddAttributeError(attrPath.AtListIndex(0).AtName("join"), "Invalid join on the first row",
-				"join says how a row combines with the previous row, so it must be omitted on the first row.")
+		if i == 0 && !row.Combine.IsNull() && !row.Combine.IsUnknown() {
+			diags.AddAttributeError(attrPath.AtListIndex(0).AtName("combine"), "Invalid combine on the first row",
+				"combine says how a row combines with the row above, so it must be omitted on the first row.")
 		}
-		if row.Name.IsNull() || row.Name.IsUnknown() {
+		if row.Property.IsNull() || row.Property.IsUnknown() {
 			continue
 		}
-		key := strings.ToLower(row.Name.ValueString())
+		key := strings.ToLower(row.Property.ValueString())
 		if seen[key] {
 			diags.AddAttributeError(attrPath.AtListIndex(i).AtName("name"), "Duplicate property",
-				fmt.Sprintf("property %q appears in more than one row; property names are case-insensitive.", row.Name.ValueString()))
+				fmt.Sprintf("property %q appears in more than one row; property names are case-insensitive.", row.Property.ValueString()))
 		}
 		seen[key] = true
 	}
@@ -1480,36 +1480,36 @@ func expandRepoPropertyFilters(ctx context.Context, list types.List, diags *diag
 		var values []string
 		diags.Append(row.Values.ElementsAs(ctx, &values, false)...)
 		out = append(out, stepsecurityapi.RepoPropertyFilter{
-			Name:   row.Name.ValueString(),
+			Name:   row.Property.ValueString(),
 			Values: values,
 			Match:  row.Match.ValueString(),
-			Join:   row.Join.ValueString(),
+			Join:   row.Combine.ValueString(),
 		})
 	}
 	return out
 }
 
 // flattenRepoPropertyFilters converts the stored rule to state. The backend
-// clears join on the first row, which lands as null to match the config.
+// clears combine on the first row, which lands as null to match the config.
 func flattenRepoPropertyFilters(filters []stepsecurityapi.RepoPropertyFilter, diags *diag.Diagnostics) types.List {
 	if len(filters) == 0 {
 		return types.ListNull(repoPropertyFilterObjectType)
 	}
 	rows := make([]attr.Value, 0, len(filters))
 	for i, f := range filters {
-		join := types.StringNull()
+		combine := types.StringNull()
 		if i > 0 {
-			join = types.StringValue(f.Join)
+			combine = types.StringValue(f.Join)
 		}
 		match := f.Match
 		if match == "" {
 			match = "any"
 		}
 		row, d := types.ObjectValue(repoPropertyFilterObjectType.AttrTypes, map[string]attr.Value{
-			"name":   types.StringValue(f.Name),
-			"values": stringSetValueOrNull(f.Values, diags),
-			"match":  types.StringValue(match),
-			"join":   join,
+			"property": types.StringValue(f.Name),
+			"values":   stringSetValueOrNull(f.Values, diags),
+			"match":    types.StringValue(match),
+			"combine":  combine,
 		})
 		diags.Append(d...)
 		rows = append(rows, row)
@@ -1550,14 +1550,14 @@ func (v trimmedToken) ValidateString(ctx context.Context, req validator.StringRe
 
 var _ resource.ResourceWithModifyPlan = &githubRunPolicyResource{}
 
-// ModifyPlan resolves an omitted join to what the API stores: null on the
-// first row and "and" on later rows. join is Optional+Computed, so without
-// this a removed join keeps its prior value and the plan shows no change.
+// ModifyPlan resolves an omitted combine to what the API stores: null on the
+// first row and "and" on later rows. combine is Optional+Computed, so without
+// this a removed combine keeps its prior value and the plan shows no change.
 func (r *githubRunPolicyResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
 	}
-	attrPath := path.Root("repo_property_filters")
+	attrPath := path.Root("custom_property_rule")
 	var cfg, planned types.List
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, attrPath, &cfg)...)
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, attrPath, &planned)...)
@@ -1577,7 +1577,7 @@ func (r *githubRunPolicyResource) ModifyPlan(ctx context.Context, req resource.M
 		if !ok || !cfgOK || row.IsNull() || row.IsUnknown() || cfgRow.IsNull() || cfgRow.IsUnknown() {
 			continue
 		}
-		if j, ok := cfgRow.Attributes()["join"]; !ok || !j.IsNull() {
+		if j, ok := cfgRow.Attributes()["combine"]; !ok || !j.IsNull() {
 			continue
 		}
 		want := types.StringValue("and")
@@ -1588,10 +1588,10 @@ func (r *githubRunPolicyResource) ModifyPlan(ctx context.Context, req resource.M
 		for k, v := range row.Attributes() {
 			attrs[k] = v
 		}
-		if attrs["join"].Equal(want) {
+		if attrs["combine"].Equal(want) {
 			continue
 		}
-		attrs["join"] = want
+		attrs["combine"] = want
 		obj, d := types.ObjectValue(repoPropertyFilterObjectType.AttrTypes, attrs)
 		resp.Diagnostics.Append(d...)
 		rows[i] = obj

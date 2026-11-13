@@ -485,25 +485,26 @@ resource "stepsecurity_github_run_policy" "secrets_policy_default_branch" {
   }
 }
 
-# Custom Property Scope Example - Applies to repositories by GitHub custom
-# property, including repositories tagged later. Rows after the first join the
-# previous row with "and" (default) or "or"; "and" binds first. Property names
-# ignore case; values match exactly. This rule reads:
-# (sensitive_app_level is Tier 1) OR (compliance_scope has both pci AND sox).
+# Custom Property Rule Example - Applies to repositories by GitHub custom
+# property, including repositories tagged later (the console's "Repositories
+# with a custom property" scope). Rows after the first combine with the row
+# above using "and" (default) or "or"; "and" binds first. Property names ignore
+# case; values match exactly. This rule reads:
+# (sensitive_app_level is Tier 1) OR (compliance_scope is all of pci, sox).
 resource "stepsecurity_github_run_policy" "tier1_secrets_policy" {
   owner = "my-org"
   name  = "Secrets Policy - Tier 1 Repositories"
 
-  repo_property_filters = [
+  custom_property_rule = [
     {
-      name   = "sensitive_app_level"
-      values = ["Tier 1"]
+      property = "sensitive_app_level"
+      values   = ["Tier 1"]
     },
     {
-      join   = "or"
-      name   = "compliance_scope"
-      values = ["pci", "sox"]
-      match  = "all"
+      combine  = "or"
+      property = "compliance_scope"
+      values   = ["pci", "sox"]
+      match    = "all"
     },
   ]
 
