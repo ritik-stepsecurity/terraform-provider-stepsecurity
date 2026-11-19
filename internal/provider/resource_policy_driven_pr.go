@@ -472,6 +472,10 @@ func (r *policyDrivenPRResource) ImportState(ctx context.Context, req resource.I
 		dockerfilePatternsSet, _ = types.SetValueFrom(ctx, types.StringType, elements)
 	}
 
+	// The API returns cooldown and groups parsed, not as the YAML the practitioner
+	// wrote. There is no prior state on import, so they are rendered as YAML.
+	policy.AutoRemdiationOptions.PackageEcosystem = recoverDependabotYAML(policy.AutoRemdiationOptions.PackageEcosystem, nil)
+
 	var packageEcosystemList types.List
 	if len(policy.AutoRemdiationOptions.PackageEcosystem) > 0 {
 		var ecosystemObjects []attr.Value
@@ -1572,6 +1576,15 @@ func (r *policyDrivenPRResource) Read(ctx context.Context, req resource.ReadRequ
 	}
 
 	// Update state with API response, preserving selected_repos and excluded_repos from state
+	// The API returns cooldown and groups parsed, not as the YAML in state. Keep the
+	// YAML from state when it parses to the same value, so a refresh does not turn
+	// formatting into a diff.
+	var priorEcosystems []packageEcosystemModel
+	if !currentStateOptions.PackageEcosystem.IsNull() && !currentStateOptions.PackageEcosystem.IsUnknown() {
+		currentStateOptions.PackageEcosystem.ElementsAs(ctx, &priorEcosystems, false)
+	}
+	stepSecurityPolicy.AutoRemdiationOptions.PackageEcosystem = recoverDependabotYAML(stepSecurityPolicy.AutoRemdiationOptions.PackageEcosystem, priorEcosystems)
+
 	r.updatePolicyDrivenPRState(ctx, *stepSecurityPolicy, &state, stateSelectedRepos, stateExcludedRepos)
 
 	// Preserve ordering of list attributes from current state to prevent spurious diffs

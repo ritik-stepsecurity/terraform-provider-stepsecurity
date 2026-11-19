@@ -14,6 +14,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"gopkg.in/yaml.v3"
+
+	stepsecurityapi "github.com/step-security/terraform-provider-stepsecurity/internal/stepsecurity-api"
 )
 
 // fakePolicyDrivenPRBackend is a stand-in for the policy-driven PR API that stores
@@ -234,6 +237,90 @@ resource "stepsecurity_policy_driven_pr" "test" {
   }
 }
 `
+
+// dependabotYAMLFixture holds cooldown_yaml and groups_yaml in a non-canonical form:
+// keys out of order, mixed quoting, four-space indentation. The backend keeps none of
+// that text, so the read has to recover it from the parsed values.
+const dependabotYAMLFixture = `
+resource "stepsecurity_policy_driven_pr" "test" {
+  owner          = "step-terraform-tests"
+  selected_repos = ["test-repo-one"]
+
+  auto_remediation_options = {
+    create_pr          = true
+    pin_actions_to_sha = true
+
+    package_ecosystem = [
+      {
+        package       = "npm"
+        interval      = "daily"
+        cooldown_yaml = "include:\n    - '*'\ndefault-days: 5\nsemver-major-days: 30\n"
+        groups_yaml   = "development-dependencies:\n    patterns: [\"*\"]\n    dependency-type: development\nproduction-dependencies:\n    update-types:\n        - minor\n        - patch\n    dependency-type: production\n"
+        options_yaml  = "time: \"09:00\"\nopen-pull-requests-limit: 10\n"
+      },
+      {
+        package  = "pip"
+        interval = "weekly"
+      }
+    ]
+  }
+}
+`
+
+// withParsedDependabotYAML makes the fake store package_ecosystem entries the way the
+// real backend does: cooldown_yaml and groups_yaml are parsed into cooldown and groups
+// (with the API's Go field names as JSON keys) and the YAML text is dropped;
+// options_yaml is kept as written.
+func withParsedDependabotYAML(backend *fakePolicyDrivenPRBackend) *fakePolicyDrivenPRBackend {
+	backend.onStore = func(config map[string]any) {
+		settings, _ := config["control_settings"].(map[string]any)
+		ecosystems, _ := settings["package_ecosystem"].([]any)
+		for _, raw := range ecosystems {
+			entry, _ := raw.(map[string]any)
+			if entry == nil {
+				continue
+			}
+			if text, _ := entry["cooldown_yaml"].(string); text != "" {
+				var cooldown stepsecurityapi.DependabotCoolDown
+				if err := yaml.Unmarshal([]byte(text), &cooldown); err != nil {
+					panic(err)
+				}
+				entry["cooldown"] = jsonRoundTrip(cooldown)
+				delete(entry, "cooldown_yaml")
+			}
+			if text, _ := entry["groups_yaml"].(string); text != "" {
+				var groups map[string]stepsecurityapi.DependabotGroup
+				if err := yaml.Unmarshal([]byte(text), &groups); err != nil {
+					panic(err)
+				}
+				entry["groups"] = jsonRoundTrip(groups)
+				delete(entry, "groups_yaml")
+			}
+		}
+	}
+	return backend
+}
+
+// jsonRoundTrip returns v as the generic value its JSON encoding decodes to.
+func jsonRoundTrip(v any) any {
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	var out any
+	if err := json.Unmarshal(encoded, &out); err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// TestAccPolicyDrivenPRDependabotYAMLPlanIsEmptyAfterApply is the case a practitioner hit
+// on v0.0.50: every plan after apply showed an in-place change on groups_yaml. The
+// backend returns cooldown and groups parsed and never the YAML, so the provider read
+// them as null and re-applied the configuration's text each time.
+func TestAccPolicyDrivenPRDependabotYAMLPlanIsEmptyAfterApply(t *testing.T) {
+	testAccPolicyDrivenPRAgainstFake(t, withParsedDependabotYAML(newFakePolicyDrivenPRBackend(true)), dependabotYAMLFixture)
+}
 
 // TestAccPolicyDrivenPRUnsortedListsPlanIsEmptyAfterApply is the end-to-end version of
 // issue #47: the practitioner's list order is not alphabetical, so the read has to realign

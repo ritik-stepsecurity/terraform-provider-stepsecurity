@@ -110,6 +110,33 @@ type DependabotConfig struct {
 	CoolDownYAML string `json:"cooldown_yaml,omitempty"`
 	GroupsYAML   string `json:"groups_yaml,omitempty"`
 	OptionsYAML  string `json:"options_yaml,omitempty"`
+	// The API parses cooldown_yaml and groups_yaml when a config is written and stores
+	// the result in these structured fields; it does not keep or return the YAML text.
+	// options_yaml is stored as written. Reads use these to recover the YAML.
+	CoolDown *DependabotCoolDown        `json:"cooldown,omitempty"`
+	Groups   map[string]DependabotGroup `json:"groups,omitempty"`
+}
+
+// DependabotCoolDown is the parsed form of cooldown_yaml as the API returns it. The JSON
+// names are the API's Go field names; the yaml tags are Dependabot's own keys, which is
+// what the provider renders back into cooldown_yaml.
+type DependabotCoolDown struct {
+	DefaultDays     int      `json:"DefaultDays,omitempty" yaml:"default-days,omitempty"`
+	SemverMajorDays int      `json:"SemverMajorDays,omitempty" yaml:"semver-major-days,omitempty"`
+	SemverMinorDays int      `json:"SemverMinorDays,omitempty" yaml:"semver-minor-days,omitempty"`
+	SemverPatchDays int      `json:"SemverPatchDays,omitempty" yaml:"semver-patch-days,omitempty"`
+	Include         []string `json:"Include,omitempty" yaml:"include,omitempty"`
+	Exclude         []string `json:"Exclude,omitempty" yaml:"exclude,omitempty"`
+}
+
+// DependabotGroup is the parsed form of one entry of groups_yaml as the API returns it.
+type DependabotGroup struct {
+	AppliesTo       string   `json:"AppliesTo,omitempty" yaml:"applies-to,omitempty"`
+	Patterns        []string `json:"Patterns,omitempty" yaml:"patterns,omitempty"`
+	ExcludePatterns []string `json:"ExcludePatterns,omitempty" yaml:"exclude-patterns,omitempty"`
+	DependencyType  string   `json:"DependencyType,omitempty" yaml:"dependency-type,omitempty"`
+	UpdateTypes     []string `json:"UpdateTypes,omitempty" yaml:"update-types,omitempty"`
+	GroupBy         string   `json:"GroupBy,omitempty" yaml:"group-by,omitempty"`
 }
 
 // HardenRunnerConfig is sent as a whole object: the API replaces it rather than merging
