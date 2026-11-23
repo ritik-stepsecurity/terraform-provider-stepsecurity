@@ -1460,7 +1460,7 @@ func validateRepoPropertyFiltersConfig(ctx context.Context, cfg githubRunPolicyR
 		}
 		key := strings.ToLower(row.Property.ValueString())
 		if seen[key] {
-			diags.AddAttributeError(attrPath.AtListIndex(i).AtName("name"), "Duplicate property",
+			diags.AddAttributeError(attrPath.AtListIndex(i).AtName("property"), "Duplicate property",
 				fmt.Sprintf("property %q appears in more than one row; property names are case-insensitive.", row.Property.ValueString()))
 		}
 		seen[key] = true

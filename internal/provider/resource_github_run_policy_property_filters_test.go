@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	fwdatasource "github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -166,6 +167,40 @@ func TestGithubRunPolicyResource_UpdateWithoutRuleSendsEmptyList(t *testing.T) {
 	assert.Nil(t, stateFilters(t, resp.State))
 }
 
+// An update that only renames the policy must send each row's match back
+// unchanged; dropping it would let the API default an "all" row to "any" and
+// widen the policy to more repositories.
+func TestGithubRunPolicyResource_UnrelatedUpdateKeepsMatchAll(t *testing.T) {
+	t.Parallel()
+
+	mockClient := &stepsecurityapi.MockStepSecurityClient{}
+	mockClient.
+		On("UpdateRunPolicy", mock.Anything, "test-org", "policy-123", mock.MatchedBy(func(req stepsecurityapi.UpdateRunPolicyRequest) bool {
+			f := req.RepoPropertyFilters
+			return req.Name == "Renamed Policy" && len(f) == 2 && f[0].Match == "any" && f[1].Match == "all"
+		})).
+		Return(testPolicyResponse(testStoredRule()), nil).
+		Once()
+
+	prior := testPropertyScopedPlan(testTwoRowRule())
+	plan := testPropertyScopedPlan(testTwoRowRule())
+	plan.Name = types.StringValue("Renamed Policy")
+
+	r := &githubRunPolicyResource{client: mockClient}
+	resp := &fwresource.UpdateResponse{State: tfsdk.State{Schema: testGithubRunPolicyResourceSchema(t)}}
+	r.Update(context.Background(), fwresource.UpdateRequest{
+		Config: testGithubRunPolicyConfig(t, plan),
+		Plan:   testGithubRunPolicyPlan(t, plan),
+		State:  testGithubRunPolicyState(t, prior),
+	}, resp)
+
+	require.False(t, resp.Diagnostics.HasError(), "diagnostics: %v", resp.Diagnostics)
+	mockClient.AssertExpectations(t)
+	rows := stateFilters(t, resp.State)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "all", rows[1].Match.ValueString())
+}
+
 func TestGithubRunPolicyResource_CreateWithoutRuleOmitsField(t *testing.T) {
 	t.Parallel()
 
@@ -188,6 +223,16 @@ func TestGithubRunPolicyResource_ImportStoredRule(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.True(t, rows[0].Combine.IsNull())
 	assert.Equal(t, "or", rows[1].Combine.ValueString())
+	assert.Equal(t, "all", rows[1].Match.ValueString(), "import keeps an all row")
+
+	// A stored row without match reads as the API default, any.
+	r.updateModelFromAPI(context.Background(), &model, testPolicyResponse([]stepsecurityapi.RepoPropertyFilter{
+		{Name: "team", Values: []string{"payments"}},
+	}), &diags)
+	require.False(t, diags.HasError(), "diagnostics: %v", diags)
+	rows = stateFilters(t, testGithubRunPolicyState(t, model))
+	require.Len(t, rows, 1)
+	assert.Equal(t, "any", rows[0].Match.ValueString())
 
 	r.updateModelFromAPI(context.Background(), &model, testPolicyResponse(nil), &diags)
 	require.False(t, diags.HasError())
@@ -199,29 +244,30 @@ func TestGithubRunPolicyResource_ValidateConfigPropertyFilters(t *testing.T) {
 
 	repos := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("widgets")})
 	cases := []struct {
-		name    string
-		mutate  func(m *githubRunPolicyResourceModel)
-		wantErr string
+		name     string
+		mutate   func(m *githubRunPolicyResourceModel)
+		wantErr  string
+		wantPath path.Path
 	}{
 		{name: "valid rule", mutate: func(*githubRunPolicyResourceModel) {}},
 		{name: "no rule with all_repos", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListNull(repoPropertyFilterObjectType)
 			m.AllRepos = types.BoolValue(true)
 		}},
-		{name: "with all_repos", mutate: func(m *githubRunPolicyResourceModel) { m.AllRepos = types.BoolValue(true) }, wantErr: "Conflicting repository scope"},
-		{name: "with all_orgs", mutate: func(m *githubRunPolicyResourceModel) { m.AllOrgs = types.BoolValue(true) }, wantErr: "Conflicting repository scope"},
-		{name: "with repositories", mutate: func(m *githubRunPolicyResourceModel) { m.Repositories = repos }, wantErr: "Conflicting repository scope"},
+		{name: "with all_repos", mutate: func(m *githubRunPolicyResourceModel) { m.AllRepos = types.BoolValue(true) }, wantErr: "Conflicting repository scope", wantPath: path.Root("custom_property_rule")},
+		{name: "with all_orgs", mutate: func(m *githubRunPolicyResourceModel) { m.AllOrgs = types.BoolValue(true) }, wantErr: "Conflicting repository scope", wantPath: path.Root("custom_property_rule")},
+		{name: "with repositories", mutate: func(m *githubRunPolicyResourceModel) { m.Repositories = repos }, wantErr: "Conflicting repository scope", wantPath: path.Root("custom_property_rule")},
 		{name: "combine on first row", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
 				testPropertyFilterRow("team", []string{"payments"}, "any", types.StringValue("and")),
 			})
-		}, wantErr: "Invalid combine on the first row"},
+		}, wantErr: "Invalid combine on the first row", wantPath: path.Root("custom_property_rule").AtListIndex(0).AtName("combine")},
 		{name: "duplicate property ignoring case", mutate: func(m *githubRunPolicyResourceModel) {
 			m.RepoPropertyFilters = types.ListValueMust(repoPropertyFilterObjectType, []attr.Value{
 				testPropertyFilterRow("Team", []string{"payments"}, "any", types.StringNull()),
 				testPropertyFilterRow("team", []string{"billing"}, "any", types.StringValue("or")),
 			})
-		}, wantErr: "Duplicate property"},
+		}, wantErr: "Duplicate property", wantPath: path.Root("custom_property_rule").AtListIndex(1).AtName("property")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -236,6 +282,12 @@ func TestGithubRunPolicyResource_ValidateConfigPropertyFilters(t *testing.T) {
 			}
 			require.True(t, resp.Diagnostics.HasError())
 			assert.Equal(t, tc.wantErr, resp.Diagnostics.Errors()[0].Summary())
+			// The path is what lets Terraform point the error at the config line.
+			if len(tc.wantPath.Steps()) > 0 {
+				withPath, ok := resp.Diagnostics.Errors()[0].(diag.DiagnosticWithPath)
+				require.True(t, ok, "error has no attribute path")
+				assert.Equal(t, tc.wantPath.String(), withPath.Path().String())
+			}
 		})
 	}
 }
@@ -270,6 +322,7 @@ func TestGithubRunPoliciesDataSource_ReadMapsPropertyFilters(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, "compliance_scope", rows[1].Property.ValueString())
 	assert.Equal(t, "or", rows[1].Combine.ValueString())
+	assert.Equal(t, "all", rows[1].Match.ValueString())
 	assert.True(t, entries[1].RepoPropertyFilters.IsNull(), "policy without a rule reads back as null")
 }
 
