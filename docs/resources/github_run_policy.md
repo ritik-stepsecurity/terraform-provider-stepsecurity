@@ -504,9 +504,8 @@ resource "stepsecurity_github_run_policy" "secrets_policy_default_branch" {
 # property, including repositories tagged later (the console's "Repositories
 # with a custom property" scope). Rows after the first combine with the row
 # above using "and" (default) or "or"; "and" binds first. Property names ignore
-# case; values match exactly, and a row matches when the repository has any
-# of its values. This rule reads:
-# (sensitive_app_level is Tier 1) OR (compliance_scope is pci or sox).
+# case; values match exactly. This rule reads:
+# (sensitive_app_level is Tier 1) OR (compliance_scope is all of pci, sox).
 resource "stepsecurity_github_run_policy" "tier1_secrets_policy" {
   owner = "my-org"
   name  = "Secrets Policy - Tier 1 Repositories"
@@ -520,6 +519,7 @@ resource "stepsecurity_github_run_policy" "tier1_secrets_policy" {
       combine  = "or"
       property = "compliance_scope"
       values   = ["pci", "sox"]
+      match    = "all"
     },
   ]
 
@@ -621,11 +621,12 @@ Optional:
 Required:
 
 - `property` (String) The custom property name (case-insensitive).
-- `values` (Set of String) Values to match exactly (case-sensitive). A repository matches the row when it has any of them.
+- `values` (Set of String) Values to match exactly (case-sensitive).
 
 Optional:
 
 - `combine` (String) How this row combines with the row above: `and` (default) or `or`. Omit on the first row.
+- `match` (String) `any` (default): the repository has at least one of `values`. `all`: it has every value (multi-select properties).
 
 ## Import
 

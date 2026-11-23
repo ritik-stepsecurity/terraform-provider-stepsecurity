@@ -201,6 +201,7 @@ Read-Only:
 Read-Only:
 
 - `combine` (String) `and` or `or` with the row above; null on the first row.
+- `match` (String) `any` or `all` of `values`.
 - `property` (String) The custom property name.
 - `values` (Set of String) Values matched exactly.
 
